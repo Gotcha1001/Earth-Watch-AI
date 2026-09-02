@@ -3,7 +3,26 @@
 // convex/eventsIngest.ts because "use node" files may only export actions.
 
 import { v } from "convex/values";
-import { internalMutation, internalQuery, query } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
+
+// Buckets lat/lon to ~0.2° (~20km) so a reissued/updated alert for the same
+// storm/warning collapses onto the same row instead of stacking as a "new"
+// event just because the source gave the update a fresh id.
+function computeDedupeKey(event: {
+  source: string;
+  title: string;
+  latitude: number;
+  longitude: number;
+}): string {
+  const latBucket = Math.round(event.latitude * 5) / 5;
+  const lonBucket = Math.round(event.longitude * 5) / 5;
+  return `${event.source}|${event.title}|${latBucket}|${lonBucket}`;
+}
 
 export const upsertEvents = internalMutation({
   args: {
@@ -14,6 +33,7 @@ export const upsertEvents = internalMutation({
           v.literal("usgs"),
           v.literal("eonet"),
           v.literal("noaa"),
+          v.literal("gvp"),
         ),
         category: v.union(
           v.literal("earthquake"),
@@ -24,14 +44,8 @@ export const upsertEvents = internalMutation({
           v.literal("severeWeather"),
         ),
         title: v.string(),
-        // Source APIs (EONET in particular) sometimes send explicit `null`
-        // for a missing optional field rather than omitting the key.
-        // v.optional() alone only accepts `undefined`, so we widen these to
-        // accept null too and normalize to undefined below, after validation
-        // has already passed — normalizing inside the handler doesn't help
-        // if the validator (which runs first) rejects the null before the
-        // handler body ever executes.
         description: v.optional(v.union(v.string(), v.null())),
+        locationName: v.optional(v.union(v.string(), v.null())),
         latitude: v.number(),
         longitude: v.number(),
         severity: v.number(),
@@ -44,37 +58,77 @@ export const upsertEvents = internalMutation({
   handler: async (ctx, { events }) => {
     const now = Date.now();
     let failures = 0;
+    let matchedByExternalId = 0;
+    let matchedByDedupeKey = 0;
+    let inserted = 0;
 
     for (const rawEvent of events) {
       try {
-        // Normalize null -> undefined so the stored doc matches the schema's
-        // v.optional(v.string()) shape.
         const event = {
           ...rawEvent,
           description: rawEvent.description ?? undefined,
+          locationName: rawEvent.locationName ?? undefined,
           sourceUrl: rawEvent.sourceUrl ?? undefined,
         };
+        const dedupeKey = computeDedupeKey(event);
 
-        const existing = await ctx.db
+        const existingByExternalId = await ctx.db
           .query("disasterEvents")
           .withIndex("by_externalId", (q) =>
             q.eq("externalId", event.externalId),
           )
           .unique();
 
-        if (existing) {
-          await ctx.db.patch(existing._id, {
+        if (existingByExternalId) {
+          await ctx.db.patch(existingByExternalId._id, {
             severity: event.severity,
+            occurredAt: event.occurredAt,
+            description: event.description,
+            // Only overwrite if this tick actually gave us a name — an
+            // ingest tick with no name (or a source that doesn't provide
+            // one) should never wipe out a value geocodeBackfill already
+            // filled in for this event.
+            ...(event.locationName ? { locationName: event.locationName } : {}),
+            sourceUrl: event.sourceUrl,
             status: "active",
             ingestedAt: now,
+            dedupeKey,
           });
-        } else {
-          await ctx.db.insert("disasterEvents", {
-            ...event,
-            ingestedAt: now,
-            status: "active",
-          });
+          matchedByExternalId += 1;
+          continue;
         }
+
+        // No exact externalId match — check for an active event that's
+        // functionally the same warning under a different id (NOAA's case).
+        const existingByDedupeKey = await ctx.db
+          .query("disasterEvents")
+          .withIndex("by_dedupeKey_status", (q) =>
+            q.eq("dedupeKey", dedupeKey).eq("status", "active"),
+          )
+          .first();
+
+        if (existingByDedupeKey) {
+          await ctx.db.patch(existingByDedupeKey._id, {
+            externalId: event.externalId, // adopt the newest id for this warning
+            severity: event.severity,
+            occurredAt: event.occurredAt,
+            description: event.description,
+            ...(event.locationName ? { locationName: event.locationName } : {}),
+            sourceUrl: event.sourceUrl,
+            status: "active",
+            ingestedAt: now,
+          });
+          matchedByDedupeKey += 1;
+          continue;
+        }
+
+        await ctx.db.insert("disasterEvents", {
+          ...event,
+          dedupeKey,
+          ingestedAt: now,
+          status: "active",
+        });
+        inserted += 1;
       } catch (error) {
         // Isolate the failure to this one event — a single malformed
         // record (bad field, unexpected shape, etc.) should never cost us
@@ -87,11 +141,9 @@ export const upsertEvents = internalMutation({
       }
     }
 
-    if (failures > 0) {
-      console.error(
-        `[events] upsertEvents: ${failures}/${events.length} events failed`,
-      );
-    }
+    console.log(
+      `[events] upsertEvents: ${inserted} inserted, ${matchedByExternalId} updated (id match), ${matchedByDedupeKey} updated (dedupe match), ${failures} failed`,
+    );
   },
 });
 
@@ -129,5 +181,44 @@ export const listActiveEventsInternal = internalQuery({
       .query("disasterEvents")
       .withIndex("by_status_category", (q) => q.eq("status", "active"))
       .collect();
+  },
+});
+
+// Wipes the entire disasterEvents table. This is global data (not scoped to
+// any one user's watched regions), so this clears what every user sees on
+// the Live Map and dashboard, not just the caller's own view. Requires an
+// authenticated user to avoid this being callable anonymously.
+export const clearAllEvents = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Must be signed in to reset events.");
+    }
+    const all = await ctx.db.query("disasterEvents").collect();
+    for (const event of all) {
+      await ctx.db.delete(event._id);
+    }
+    return all.length;
+  },
+});
+
+// Used only by geocodeBackfill.ts once a reverse-geocode lookup resolves.
+export const patchLocationName = internalMutation({
+  args: { eventId: v.id("disasterEvents"), locationName: v.string() },
+  handler: async (ctx, { eventId, locationName }) => {
+    await ctx.db.patch(eventId, { locationName });
+  },
+});
+
+// Used only by geocodeBackfill.ts to find events still missing a name.
+// Not indexed — fine at this table's scale, and only runs once a minute.
+export const listEventsMissingLocationName = internalQuery({
+  args: { limit: v.number() },
+  handler: async (ctx, { limit }) => {
+    return ctx.db
+      .query("disasterEvents")
+      .filter((q) => q.eq(q.field("locationName"), undefined))
+      .take(limit);
   },
 });

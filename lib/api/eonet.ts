@@ -26,8 +26,7 @@ interface EonetResponse {
   events: EonetEvent[];
 }
 
-const EONET_URL =
-  "https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=100";
+const EONET_BASE = "https://eonet.gsfc.nasa.gov/api/v3/events";
 
 const CATEGORY_MAP: Record<string, NormalizedEvent["category"]> = {
   wildfires: "wildfire",
@@ -38,9 +37,7 @@ const CATEGORY_MAP: Record<string, NormalizedEvent["category"]> = {
   snow: "severeWeather",
 };
 
-// EONET doesn't give a numeric severity, so we approximate from category —
-// this is intentionally coarse; the AI risk-summary step reads the raw
-// title/description too, not just this number.
+// Base severity per our category, used since EONET has no numeric severity.
 const CATEGORY_BASE_SEVERITY: Record<NormalizedEvent["category"], number> = {
   earthquake: 0,
   wildfire: 55,
@@ -48,6 +45,18 @@ const CATEGORY_BASE_SEVERITY: Record<NormalizedEvent["category"], number> = {
   storm: 65,
   volcano: 70,
   severeWeather: 40,
+};
+
+// One request per EONET category id, each with its own limit, so a busy
+// category (wildfires, severeStorms) can never crowd a quieter one
+// (volcanoes) out of the results the way a single shared limit did.
+const CATEGORY_FETCH_LIMITS: Record<string, number> = {
+  wildfires: 100,
+  floods: 50,
+  severeStorms: 50,
+  volcanoes: 50,
+  drought: 25,
+  snow: 25,
 };
 
 function firstPoint(
@@ -58,15 +67,51 @@ function firstPoint(
   return { lat, lon };
 }
 
-export async function fetchEonetEvents(): Promise<NormalizedEvent[]> {
-  const response = await fetch(EONET_URL);
+async function fetchEonetCategory(
+  categoryId: string,
+  limit: number,
+): Promise<EonetEvent[]> {
+  const url = `${EONET_BASE}?status=open&category=${categoryId}&limit=${limit}`;
+  const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`EONET request failed: ${response.status}`);
+    throw new Error(
+      `EONET request failed for category=${categoryId}: ${response.status}`,
+    );
   }
   const data = (await response.json()) as EonetResponse;
+  return data.events;
+}
 
-  const results: NormalizedEvent[] = [];
-  for (const event of data.events) {
+export async function fetchEonetEvents(): Promise<NormalizedEvent[]> {
+  const categoryIds = Object.keys(CATEGORY_FETCH_LIMITS);
+
+  const results = await Promise.allSettled(
+    categoryIds.map((id) => fetchEonetCategory(id, CATEGORY_FETCH_LIMITS[id])),
+  );
+
+  const rawEvents: EonetEvent[] = [];
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      rawEvents.push(...result.value);
+    } else {
+      // One category failing (e.g. EONET hiccup on "volcanoes") should
+      // never cost us the other categories in the same ingest tick.
+      console.error(
+        `[eonet] category "${categoryIds[index]}" fetch failed:`,
+        result.reason,
+      );
+    }
+  });
+
+  // Same event can theoretically show up if EONET tags it with more than
+  // one of the categories we queried — dedupe by EONET's own id.
+  const seen = new Set<string>();
+  const normalized: NormalizedEvent[] = [];
+
+  for (const event of rawEvents) {
+    if (seen.has(event.id)) continue;
+    seen.add(event.id);
+
     const categoryId = event.categories[0]?.id ?? "";
     const category = CATEGORY_MAP[categoryId];
     if (!category) continue; // skip categories we don't track (e.g. dust/haze)
@@ -75,12 +120,13 @@ export async function fetchEonetEvents(): Promise<NormalizedEvent[]> {
     const point = firstPoint(latestGeometry);
     if (!point) continue; // skip polygon-only events for now
 
-    results.push({
+    normalized.push({
       externalId: `eonet-${event.id}`,
       source: "eonet",
       category,
       title: event.title,
-      description: event.description ?? undefined, // was: event.description
+      description: event.description ?? undefined,
+      locationName: event.title,
       latitude: point.lat,
       longitude: point.lon,
       severity: CATEGORY_BASE_SEVERITY[category],
@@ -89,5 +135,6 @@ export async function fetchEonetEvents(): Promise<NormalizedEvent[]> {
       sourceUrl: event.link,
     });
   }
-  return results;
+
+  return normalized;
 }

@@ -1,7 +1,7 @@
 // lib/api/usgs.ts
 export interface NormalizedEvent {
   externalId: string;
-  source: "usgs" | "eonet" | "noaa";
+  source: "usgs" | "eonet" | "noaa" | "gvp";
   category:
     | "earthquake"
     | "wildfire"
@@ -11,6 +11,7 @@ export interface NormalizedEvent {
     | "severeWeather";
   title: string;
   description?: string;
+  locationName?: string; // add
   latitude: number;
   longitude: number;
   severity: number;
@@ -65,6 +66,7 @@ export async function fetchUsgsEarthquakes(): Promise<NormalizedEvent[]> {
       category: "earthquake",
       title: feature.properties.title,
       description: feature.properties.place ?? undefined,
+      locationName: feature.properties.place ?? undefined,
       latitude,
       longitude,
       severity: magnitudeToSeverity(feature.properties.mag),

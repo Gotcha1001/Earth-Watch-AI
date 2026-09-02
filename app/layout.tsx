@@ -18,8 +18,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Roast Inc",
-  description: "Humerous Game",
+  title: "Earth monitor AI",
+  description:
+    "Cron jobs detect natural disasters and AI generates a report of urgency to report to communities to evacuate and save lives.",
 };
 
 export default function RootLayout({
