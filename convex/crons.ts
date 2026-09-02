@@ -10,10 +10,25 @@ crons.interval(
   internal.eventsIngest.ingestAll,
   {},
 );
+
 crons.interval(
   "analyze region risk",
   { minutes: 20 },
   internal.riskEngine.analyzeAllRegions,
+  {},
+);
+
+crons.interval(
+  "global priority briefing",
+  { minutes: 15 },
+  internal.globalPriorityEngine.analyzeGlobalPriority,
+  {},
+);
+
+crons.interval(
+  "backfill event location names",
+  { minutes: 1 },
+  internal.geocodeBackfill.backfillLocationNames,
   {},
 );
 

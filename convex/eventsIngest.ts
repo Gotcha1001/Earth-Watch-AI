@@ -2,11 +2,12 @@
 // allows in a "use node" file, so ingestAll lives here and the
 // mutations/queries it calls live in convex/events.ts instead.
 "use node";
-import { internalAction } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { fetchUsgsEarthquakes, type NormalizedEvent } from "../lib/api/usgs";
 import { fetchEonetEvents } from "../lib/api/eonet";
 import { fetchNoaaAlerts } from "../lib/api/noaa";
+import { fetchGvpEruptions } from "../lib/api/gvp";
 
 const RESOLVE_AFTER_MS = 1000 * 60 * 60 * 48; // auto-resolve stale events after 48h
 
@@ -21,10 +22,11 @@ export const ingestAll = internalAction({
       fetchUsgsEarthquakes(),
       fetchEonetEvents(),
       fetchNoaaAlerts(),
+      fetchGvpEruptions(),
     ]);
 
     const events: NormalizedEvent[] = [];
-    const sourceNames = ["usgs", "eonet", "noaa"] as const;
+    const sourceNames = ["usgs", "eonet", "noaa", "gvp"] as const;
     results.forEach((result, index) => {
       if (result.status === "fulfilled") {
         events.push(...result.value);
@@ -44,5 +46,15 @@ export const ingestAll = internalAction({
     });
 
     console.log(`[cron] ingestAll finished — ${events.length} events fetched`);
+  },
+});
+
+export const manualIngest = action({
+  args: {},
+  handler: async (ctx) => {
+    console.log(
+      `[manual] ingestAll triggered manually at ${new Date().toISOString()}`,
+    );
+    await ctx.runAction(internal.eventsIngest.ingestAll, {});
   },
 });

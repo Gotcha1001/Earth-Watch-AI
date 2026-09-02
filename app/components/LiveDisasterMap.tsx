@@ -1,6 +1,8 @@
 // components/LiveDisasterMap.tsx
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import type { CircleMarker as LeafletCircleMarker } from "leaflet";
 import {
   MapContainer,
   TileLayer,
@@ -170,10 +172,40 @@ function MapResizeFix(): null {
   return null;
 }
 
+function MapFocusHandler({
+  markersRef,
+}: {
+  markersRef: React.MutableRefObject<Map<string, LeafletCircleMarker>>;
+}): null {
+  const map = useMap();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const lat = parseFloat(searchParams.get("lat") ?? "");
+    const lng = parseFloat(searchParams.get("lng") ?? "");
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+    const zoom = Number(searchParams.get("zoom") ?? 8);
+    map.flyTo([lat, lng], zoom, { duration: 1 });
+
+    const id = searchParams.get("id");
+    if (!id) return;
+    // markers register their ref slightly after mount — give them a beat
+    const timeoutId = window.setTimeout(() => {
+      markersRef.current.get(id)?.openPopup();
+    }, 300);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, searchParams]);
+
+  return null;
+}
+
 export function LiveDisasterMap(): React.JSX.Element {
   const { events } = useDisasterEvents();
   const { regions } = useRegionRisk();
   const [imageryDate, setImageryDate] = useState<string>(yesterdayUtc());
+  const markersRef = useRef<Map<string, LeafletCircleMarker>>(new Map());
 
   const viirsUrl = useMemo(
     () =>
@@ -226,6 +258,32 @@ export function LiveDisasterMap(): React.JSX.Element {
           worldCopyJump
         >
           <MapResizeFix />
+          <MapFocusHandler markersRef={markersRef} />
+
+          {events.map((event) => (
+            <CircleMarker
+              key={event._id}
+              ref={(instance) => {
+                if (instance) markersRef.current.set(event._id, instance);
+                else markersRef.current.delete(event._id);
+              }}
+              center={[event.latitude, event.longitude]}
+              radius={4 + event.severity / 12}
+              pathOptions={{
+                color: CATEGORY_COLOR[event.category],
+                fillColor: CATEGORY_COLOR[event.category],
+                fillOpacity: 0.6,
+              }}
+            >
+              <Popup>
+                <strong>{event.title}</strong>
+                <br />
+                {event.rawSeverityLabel}
+                <br />
+                {new Date(event.occurredAt).toLocaleString()}
+              </Popup>
+            </CircleMarker>
+          ))}
           <LayersControl position="topright">
             <LayersControl.BaseLayer checked name="Terrain (green)">
               <TileLayer

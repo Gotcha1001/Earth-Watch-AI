@@ -11,12 +11,13 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_clerk_id", ["clerkId"]),
 
-disasterEvents: defineTable({
-    externalId: v.string(), // id from the source feed, used to dedupe on ingest
+  disasterEvents: defineTable({
+    externalId: v.string(),
     source: v.union(
       v.literal("usgs"),
       v.literal("eonet"),
       v.literal("noaa"),
+      v.literal("gvp"),
     ),
     category: v.union(
       v.literal("earthquake"),
@@ -30,17 +31,22 @@ disasterEvents: defineTable({
     description: v.optional(v.string()),
     latitude: v.number(),
     longitude: v.number(),
-    severity: v.number(), // normalized 0-100 across all source types
-    rawSeverityLabel: v.string(), // e.g. "M 5.6", "EXTREME", "Category 3"
-    occurredAt: v.number(), // ms epoch, from the source
+    severity: v.number(),
+    rawSeverityLabel: v.string(),
+    occurredAt: v.number(),
     ingestedAt: v.number(),
     status: v.union(v.literal("active"), v.literal("resolved")),
     sourceUrl: v.optional(v.string()),
+    dedupeKey: v.optional(v.string()),
+    // Reverse-geocoded human-readable place name, filled in asynchronously
+    // by convex/geocodeBackfill.ts after ingest — absent until then.
+    locationName: v.optional(v.string()),
   })
     .index("by_externalId", ["externalId"])
     .index("by_status_category", ["status", "category"])
-    .index("by_occurredAt", ["occurredAt"]),
- 
+    .index("by_occurredAt", ["occurredAt"])
+    .index("by_dedupeKey_status", ["dedupeKey", "status"]),
+
   watchedRegions: defineTable({
     userId: v.id("users"),
     name: v.string(),
@@ -49,10 +55,10 @@ disasterEvents: defineTable({
     radiusKm: v.number(),
     createdAt: v.number(),
   }).index("by_userId", ["userId"]),
- 
+
   riskAssessments: defineTable({
     regionId: v.id("watchedRegions"),
-    riskScore: v.number(), // 0-100
+    riskScore: v.number(),
     riskLevel: v.union(
       v.literal("low"),
       v.literal("moderate"),
@@ -65,7 +71,7 @@ disasterEvents: defineTable({
   })
     .index("by_regionId", ["regionId"])
     .index("by_generatedAt", ["generatedAt"]),
- 
+
   alerts: defineTable({
     userId: v.id("users"),
     regionId: v.id("watchedRegions"),
@@ -81,4 +87,25 @@ disasterEvents: defineTable({
   })
     .index("by_userId", ["userId"])
     .index("by_userId_acknowledged", ["userId", "acknowledgedAt"]),
+
+  globalBriefings: defineTable({
+    generatedAt: v.number(),
+    topEvents: v.array(
+      v.object({
+        eventId: v.id("disasterEvents"),
+        category: v.string(),
+        title: v.string(),
+        rawSeverityLabel: v.string(),
+        severity: v.number(),
+        hoursAgo: v.number(),
+        latitude: v.number(),
+        longitude: v.number(),
+        // NEW: snapshot of the event's location name at briefing time.
+        locationName: v.optional(v.string()),
+      }),
+    ),
+    mostDangerousTitle: v.string(),
+    notifyRecommended: v.boolean(),
+    aiSummary: v.string(),
+  }).index("by_generatedAt", ["generatedAt"]),
 });

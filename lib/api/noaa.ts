@@ -5,6 +5,7 @@ interface NoaaAlertProperties {
   id: string;
   headline: string | null;
   description: string | null;
+  areaDesc?: string | null; // add
   severity: "Extreme" | "Severe" | "Moderate" | "Minor" | "Unknown";
   effective: string;
   geocode: { SAME?: string[] };
@@ -36,7 +37,9 @@ const SEVERITY_SCORE: Record<NoaaAlertProperties["severity"], number> = {
 };
 
 /** NWS polygons vary a lot in shape; we use the polygon centroid as a stand-in point. */
-function centroidOf(geometry: NoaaGeometry | null): { lat: number; lon: number } | null {
+function centroidOf(
+  geometry: NoaaGeometry | null,
+): { lat: number; lon: number } | null {
   if (!geometry || geometry.type !== "Polygon") return null;
   const ring = (geometry.coordinates as number[][][])[0];
   if (!ring || ring.length === 0) return null;
@@ -75,6 +78,7 @@ export async function fetchNoaaAlerts(): Promise<NormalizedEvent[]> {
       severity: SEVERITY_SCORE[feature.properties.severity],
       rawSeverityLabel: feature.properties.severity,
       occurredAt: new Date(feature.properties.effective).getTime(),
+      locationName: feature.properties.areaDesc ?? undefined,
     });
   }
   return results;
