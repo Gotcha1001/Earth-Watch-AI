@@ -10,6 +10,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 
 import Provider from "./provider";
 import { AppSidebar } from "./components/Appsidebar";
+import MatrixBackground from "./components/MatrixBackground";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({
@@ -34,6 +35,7 @@ export default function RootLayout({
         <body
           className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         >
+          <MatrixBackground />
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
             <ConvexClientProvider>
               <Provider>
@@ -42,7 +44,7 @@ export default function RootLayout({
                     <Navbar />
                     <div className="flex flex-1 overflow-hidden">
                       <AppSidebar />
-                      <SidebarInset className="flex-1 overflow-auto">
+                      <SidebarInset className="flex-1 overflow-auto bg-transparent">
                         <main className="p-4 lg:p-6">{children}</main>
                       </SidebarInset>
                     </div>

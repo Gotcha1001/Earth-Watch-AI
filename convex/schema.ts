@@ -41,6 +41,7 @@ export default defineSchema({
     // Reverse-geocoded human-readable place name, filled in asynchronously
     // by convex/geocodeBackfill.ts after ingest — absent until then.
     locationName: v.optional(v.string()),
+    firstSeenAt: v.optional(v.number()),
   })
     .index("by_externalId", ["externalId"])
     .index("by_status_category", ["status", "category"])
