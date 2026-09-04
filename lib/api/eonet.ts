@@ -1,4 +1,3 @@
-// lib/api/eonet.ts
 import type { NormalizedEvent } from "./usgs";
 
 interface EonetCategory {
@@ -35,6 +34,9 @@ const CATEGORY_MAP: Record<string, NormalizedEvent["category"]> = {
   volcanoes: "volcano",
   drought: "severeWeather",
   snow: "severeWeather",
+  landslides: "landslide", // rockslides, snow/ice avalanches — the trigger
+  // behind events like the Nepal/Sikkim glacial lake outburst flood
+  seaLakeIce: "iceberg", // large-scale ice-shelf/glacier calving events
 };
 
 // Base severity per our category, used since EONET has no numeric severity.
@@ -45,6 +47,12 @@ const CATEGORY_BASE_SEVERITY: Record<NormalizedEvent["category"], number> = {
   storm: 65,
   volcano: 70,
   severeWeather: 40,
+  // Landslides/ice avalanches escalate fast and are exactly what precedes
+  // a GLOF or a fjord tsunami — weighted above wildfire/flood defaults.
+  landslide: 65,
+  // Calving itself is rarely an immediate life-safety event (shipping/
+  // coastal-erosion relevance mostly) — kept lower than landslide.
+  iceberg: 40,
 };
 
 // One request per EONET category id, each with its own limit, so a busy
@@ -57,6 +65,8 @@ const CATEGORY_FETCH_LIMITS: Record<string, number> = {
   volcanoes: 50,
   drought: 25,
   snow: 25,
+  landslides: 50,
+  seaLakeIce: 25,
 };
 
 function firstPoint(

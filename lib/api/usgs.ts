@@ -8,7 +8,10 @@ export interface NormalizedEvent {
     | "flood"
     | "storm"
     | "volcano"
-    | "severeWeather";
+    | "severeWeather"
+    | "landslide"
+    | "iceberg";
+
   title: string;
   description?: string;
   locationName?: string; // add
