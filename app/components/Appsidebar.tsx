@@ -1,5 +1,6 @@
 // components/AppSidebar.tsx
 "use client";
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -18,8 +19,11 @@ import {
   BellRing,
   Globe2,
   PlusCircle,
+  Flame,
+  Newspaper,
 } from "lucide-react";
 import { useGlobalBriefing } from "@/hooks/useGlobalBriefing";
+import { BriefingNotificationBell } from "@/app/components/BriefingNotificationBell";
 
 interface NavItem {
   title: string;
@@ -30,8 +34,10 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Live Map", url: "/dashboard/map", icon: Globe2 },
+  { title: "Volcanoes", url: "/dashboard/volcanoes", icon: Flame },
   { title: "My Regions", url: "/dashboard/regions", icon: MapPinned },
   { title: "Add Region", url: "/dashboard/regions/new", icon: PlusCircle },
+  { title: "Daily Briefing", url: "/dashboard/disaster-news", icon: Newspaper },
   { title: "Alerts", url: "/dashboard/alerts", icon: BellRing },
 ];
 
@@ -49,23 +55,31 @@ export function AppSidebar(): React.JSX.Element {
               {NAV_ITEMS.map((item) => {
                 const isActive = pathname === item.url;
                 const Icon = item.icon;
-                const showNotifyBadge =
+                const showGlobalBadge =
                   item.url === "/dashboard" && briefing?.notifyRecommended;
+                const isBriefingLink = item.url === "/dashboard/disaster-news";
+
                 return (
                   <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton asChild isActive={isActive}>
-                      <Link
-                        href={item.url}
-                        className="relative flex items-center gap-2"
-                      >
-                        <span className="relative">
-                          <Icon className="h-4 w-4" />
-                          {showNotifyBadge && (
-                            <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                          )}
-                        </span>
-                        <span>{item.title}</span>
-                      </Link>
+                      <div className="flex items-center justify-between gap-2">
+                        <Link
+                          href={item.url}
+                          className="relative flex flex-1 items-center gap-2"
+                        >
+                          <span className="relative">
+                            <Icon className="h-4 w-4" />
+                            {showGlobalBadge && (
+                              <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                            )}
+                          </span>
+                          <span>{item.title}</span>
+                        </Link>
+                        {/* Bell/badge sits next to "Daily Briefing" only —
+                            reads briefingNotifications, independent of the
+                            globalPriority badge above and of the Alerts page. */}
+                        {isBriefingLink && <BriefingNotificationBell />}
+                      </div>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

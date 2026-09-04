@@ -24,6 +24,8 @@ const CATEGORY_COLOR: Record<Doc<"disasterEvents">["category"], string> = {
   storm: "#7c3aed",
   volcano: "#b91c1c",
   severeWeather: "#eab308",
+  landslide: "#78350f", // NEW — brown, distinct from all existing colors
+  iceberg: "#38bdf8", // NEW — ice-blue
 };
 
 const CATEGORY_LABEL: Record<Doc<"disasterEvents">["category"], string> = {
@@ -33,6 +35,8 @@ const CATEGORY_LABEL: Record<Doc<"disasterEvents">["category"], string> = {
   storm: "Storm",
   volcano: "Volcano",
   severeWeather: "Severe Weather",
+  landslide: "Landslide/Avalanche",
+  iceberg: "Iceberg Calving",
 };
 
 function MapLegend(): React.JSX.Element {
@@ -60,9 +64,8 @@ function MapLegend(): React.JSX.Element {
 // Leaflet's default control chrome (zoom buttons, layer picker, attribution)
 // renders as a plain white box, which reads as a jarring UI mistake against
 // a dark dashboard. This keeps the same controls but themes them to match.
-// Replace DARK_CONTROL_STYLES with this. Scoped to `.dark` so it follows
-// whatever class your app already uses to toggle dark mode (same one
-// driving the `dark:` Tailwind classes above).
+// Scoped to `.dark` so it follows whatever class your app already uses to
+// toggle dark mode (same one driving the `dark:` Tailwind classes above).
 const CONTROL_STYLES = `
   /* Light mode */
   .earthwatch-map .leaflet-control-zoom a,
@@ -127,14 +130,13 @@ const CONTROL_STYLES = `
 const DEFAULT_CENTER: [number, number] = [20, 0];
 const DEFAULT_ZOOM = 2;
 
-// Below this zoom, the world's projected image (256 * 2^zoom px tall) is
-// shorter than the ~560px map box, leaving gray gaps above/below with
-// nothing wrong — it's the edge of the projection, not missing tiles.
-// zoom 2 = 1024px world height, comfortably taller than the box.
-const MIN_ZOOM = 2;
+// Hard lat clamp — Web Mercator's own valid range, so we never ask Leaflet
+// to render past the poles. Longitude is intentionally NOT clamped here;
+// it's handled by WORLD_LATLNG_BOUNDS + noWrap below, so a single copy of
+// the world can't be panned into a duplicate.
 const WORLD_BOUNDS: [[number, number], [number, number]] = [
-  [-85.06, -Infinity],
-  [85.06, Infinity],
+  [-85.06, -180],
+  [85.06, 180],
 ];
 
 /** GIBS mosaics a given day's satellite passes progressively — "today" is
@@ -151,24 +153,40 @@ function gibsUrl(layer: string, time: string, ext: "jpg" | "png"): string {
   return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${time}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.${ext}`;
 }
 
-/** Leaflet measures its container's pixel size once on mount. Loading this
- * map via next/dynamic swaps a placeholder <p> for the real DOM after
- * mount, which can happen before the layout has settled — Leaflet then
- * keeps using the too-small size it first measured (visible as gray
- * padding and a tile grid that only fills part of the box, especially
- * zoomed out). Forcing a re-measure after mount and on window resize
- * fixes it without needing any layout changes elsewhere. */
-function MapResizeFix(): null {
+/** Leaflet measures its container's pixel size once on mount, and a fixed
+ * `minZoom` only guarantees the world image fills a container up to a
+ * certain width — wider screens end up with the world image narrower than
+ * the box, which shows as gray padding down both sides (not a tile bug,
+ * just an under-zoomed map). This recomputes the minimum zoom on mount and
+ * on resize so the world always fills the container exactly, then locks
+ * `minZoom` there so users can't zoom out past it either. */
+function MapFitFix(): null {
   const map = useMap();
+
   useEffect(() => {
-    const invalidate = () => map.invalidateSize();
-    const timeoutId = window.setTimeout(invalidate, 0);
-    window.addEventListener("resize", invalidate);
+    const fit = () => {
+      map.invalidateSize();
+      // `true` = minimum zoom at which WORLD_BOUNDS fully covers the
+      // current container (no gaps), as opposed to the default (fit inside).
+      // Passing the plain array (not an L.LatLngBounds instance) matters:
+      // this map's own internal Leaflet instance normalizes it via
+      // L.latLngBounds() itself, so we never touch a second `leaflet`
+      // module instance — importing `leaflet` directly here caused a
+      // duplicate-instance bug where renderer panes came up undefined.
+      const fitZoom = map.getBoundsZoom(WORLD_BOUNDS, true);
+      map.setMinZoom(fitZoom);
+      if (map.getZoom() < fitZoom) {
+        map.setZoom(fitZoom);
+      }
+    };
+    const timeoutId = window.setTimeout(fit, 0);
+    window.addEventListener("resize", fit);
     return () => {
       window.clearTimeout(timeoutId);
-      window.removeEventListener("resize", invalidate);
+      window.removeEventListener("resize", fit);
     };
   }, [map]);
+
   return null;
 }
 
@@ -243,21 +261,19 @@ export function LiveDisasterMap(): React.JSX.Element {
         </span>
       </div>
 
-      <div
-        className="earthwatch-map rounded-lg overflow-hidden border dark:border-green-900/30"
-        style={{ height: 560 }}
-      >
+      {/* Taller + fills the full width of its parent — was a fixed 560px
+          box before, which combined with the old fixed minZoom is what
+          left gray gutters on wide screens. */}
+      <div className="earthwatch-map w-full h-[75vh] min-h-[600px] rounded-lg overflow-hidden border dark:border-green-900/30">
         <style>{CONTROL_STYLES}</style>
         <MapContainer
           center={DEFAULT_CENTER}
           zoom={DEFAULT_ZOOM}
-          minZoom={MIN_ZOOM}
           maxBounds={WORLD_BOUNDS}
           maxBoundsViscosity={1.0}
           style={{ height: "100%", width: "100%" }}
-          worldCopyJump
         >
-          <MapResizeFix />
+          <MapFitFix />
           <MapFocusHandler markersRef={markersRef} />
 
           {events.map((event) => (
@@ -290,6 +306,7 @@ export function LiveDisasterMap(): React.JSX.Element {
                 attribution='Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM | Style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)'
                 url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
                 maxNativeZoom={17}
+                noWrap
               />
             </LayersControl.BaseLayer>
 
@@ -297,6 +314,7 @@ export function LiveDisasterMap(): React.JSX.Element {
               <TileLayer
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                noWrap
               />
             </LayersControl.BaseLayer>
 
@@ -306,6 +324,7 @@ export function LiveDisasterMap(): React.JSX.Element {
                 url={viirsUrl}
                 maxNativeZoom={9}
                 maxZoom={12}
+                noWrap
               />
             </LayersControl.BaseLayer>
 
@@ -315,6 +334,7 @@ export function LiveDisasterMap(): React.JSX.Element {
                 url={modisUrl}
                 maxNativeZoom={9}
                 maxZoom={12}
+                noWrap
               />
             </LayersControl.BaseLayer>
 
@@ -324,6 +344,7 @@ export function LiveDisasterMap(): React.JSX.Element {
                 url={fireOverlayUrl}
                 maxNativeZoom={8}
                 maxZoom={12}
+                noWrap
               />
             </LayersControl.Overlay>
           </LayersControl>

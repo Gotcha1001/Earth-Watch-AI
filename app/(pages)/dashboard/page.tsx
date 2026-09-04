@@ -261,6 +261,8 @@ const CATEGORY_LABEL: Record<Category, string> = {
   storm: "🌀 Storm",
   volcano: "🌋 Volcano",
   severeWeather: "⛈️ Severe Weather",
+  landslide: "⛰️ Landslide/Avalanche", // NEW
+  iceberg: "🧊 Iceberg Calving",
 };
 
 // Tab definitions — "all" excludes volcanoes (they're map-only unless new).
@@ -272,6 +274,8 @@ const TABS: { value: Category | "all"; label: string }[] = [
   { value: "flood", label: "🌊 Floods" },
   { value: "storm", label: "🌀 Storms" },
   { value: "severeWeather", label: "⛈️ Severe Weather" },
+  { value: "landslide", label: "⛰️ Landslides" }, // NEW
+  { value: "iceberg", label: "🧊 Icebergs" }, // NEW
   { value: "volcano", label: "🌋 Volcanoes" },
 ];
 
@@ -333,7 +337,7 @@ function RegionRiskCard({ region }: { region: Doc<"watchedRegions"> }) {
   return (
     <div className="rounded-lg border p-4 bg-white dark:bg-gray-900 dark:border-green-900/30">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold text-black dark:text-white">
+        <h3 className="font-semibold text-white dark:text-white">
           {region.name}
         </h3>
         {assessment && (
@@ -370,7 +374,7 @@ function GlobalPriorityCard() {
   return (
     <div className="rounded-lg border p-4 bg-white dark:bg-gray-900 dark:border-green-900/30">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold text-black dark:text-white">
+        <h3 className="font-semibold text-white dark:text-white">
           Top Global Priority
         </h3>
         <Badge
@@ -390,7 +394,7 @@ function GlobalPriorityCard() {
             className="block rounded-md px-2 py-1.5 -mx-2 hover:bg-green-50 dark:hover:bg-green-950/20 transition-colors"
           >
             <div className="flex items-center justify-between text-xs">
-              <span className="font-medium text-black dark:text-white">
+              <span className="font-medium text-white dark:text-white">
                 {event.title}
               </span>
               <span className="text-gray-500">
@@ -510,7 +514,7 @@ export default function DashboardPage() {
     <div className="p-6 space-y-8">
       {/* Global Priority */}
       <section>
-        <h2 className="text-xl font-bold mb-3 text-black dark:text-white">
+        <h2 className="text-xl font-bold mb-3 text-white dark:text-white">
           Global Priority
         </h2>
         <GlobalPriorityCard />
@@ -518,7 +522,7 @@ export default function DashboardPage() {
 
       {/* Watched Regions */}
       <section>
-        <h2 className="text-xl font-bold mb-3 text-black dark:text-white">
+        <h2 className="text-xl font-bold mb-3 text-white dark:text-white">
           Your Watched Regions
         </h2>
         {regionsLoading ? (
@@ -540,7 +544,7 @@ export default function DashboardPage() {
       {/* Active Global Events */}
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl font-bold text-black dark:text-white">
+          <h2 className="text-xl font-bold text-white dark:text-white">
             Active Global Events
           </h2>
           <Button

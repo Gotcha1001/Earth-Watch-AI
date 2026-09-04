@@ -26,6 +26,8 @@ export default defineSchema({
       v.literal("storm"),
       v.literal("volcano"),
       v.literal("severeWeather"),
+      v.literal("landslide"), // NEW
+      v.literal("iceberg"), // NEW
     ),
     title: v.string(),
     description: v.optional(v.string()),
@@ -46,7 +48,8 @@ export default defineSchema({
     .index("by_externalId", ["externalId"])
     .index("by_status_category", ["status", "category"])
     .index("by_occurredAt", ["occurredAt"])
-    .index("by_dedupeKey_status", ["dedupeKey", "status"]),
+    .index("by_dedupeKey_status", ["dedupeKey", "status"])
+    .index("by_category_ingestedAt", ["category", "ingestedAt"]),
 
   watchedRegions: defineTable({
     userId: v.id("users"),
@@ -109,4 +112,33 @@ export default defineSchema({
     notifyRecommended: v.boolean(),
     aiSummary: v.string(),
   }).index("by_generatedAt", ["generatedAt"]),
-});
+
+  disasterReports: defineTable({
+    dateKey: v.string(), // "YYYY-MM-DD", UTC — see todayDateKey() in newsActions.ts
+    status: v.union(
+      v.literal("generating"),
+      v.literal("complete"),
+      v.literal("failed"),
+    ),
+    commentary: v.optional(v.string()),
+    findings: v.array(v.any()), // Finding[] shape from newsActions.ts
+    sources: v.array(v.object({ title: v.string(), url: v.string() })),
+    generatedAt: v.number(),
+    reason: v.optional(v.string()), // failure reason, e.g. "missing_api_key"
+  }).index("by_dateKey", ["dateKey"]),
+
+  // Severe findings spun off into their own notification stream —
+  // deliberately separate from the alerts table My Regions uses.
+  briefingNotifications: defineTable({
+    dateKey: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+    location: v.optional(v.string()),
+    category: v.optional(v.string()),
+    link: v.optional(v.string()),
+    read: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_read", ["read"])
+    .index("by_dateKey", ["dateKey"]),
+}); // <-- everything above must be inside this closing paren
