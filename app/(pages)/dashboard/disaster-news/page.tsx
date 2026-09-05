@@ -40,6 +40,28 @@ const CATEGORY_LABEL: Record<string, string> = {
   other: "❗ Other",
 };
 
+// NEW — replaces the old one-size-fits-all "check your API keys" line.
+// A ResourceExhausted/overload message from the OpenRouter call is a
+// transient upstream capacity issue, not something the user's keys can fix,
+// so telling them to go check their keys for that case just sends them on
+// a pointless hunt. Everything else still gets a reasonable, honest hint.
+function failureHint(reason?: string): string {
+  if (!reason) return "Try again.";
+  if (reason === "missing_api_key") {
+    return "Missing Tavily or OpenRouter API key — check your environment variables.";
+  }
+  if (/resourceexhausted|overloaded|rate limit/i.test(reason)) {
+    return "The AI provider is temporarily overloaded (this is on their end, not your API key). Try again in a minute.";
+  }
+  if (reason.startsWith("tavily_error")) {
+    return "Tavily search failed. Try again, or check your Tavily API key.";
+  }
+  if (reason.startsWith("http_")) {
+    return "The request failed. Try again.";
+  }
+  return "Try again.";
+}
+
 function FindingCard({ finding }: { finding: Finding }) {
   return (
     <div className="rounded-lg border p-4 dark:border-cyan-900/30">
@@ -137,8 +159,10 @@ export default function DisasterNewsPage(): React.JSX.Element {
 
       {report?.status === "failed" && (
         <div className="rounded-lg border border-red-900/40 bg-red-950/20 p-4 text-sm text-red-300">
-          Generation failed{report.reason ? `: ${report.reason}` : "."} Try
-          again, or check your Tavily / OpenRouter API keys.
+          {/* CHANGED — was a hardcoded "Try again, or check your Tavily / OpenRouter
+              API keys." for every failure. Now the hint matches the actual reason. */}
+          Generation failed{report.reason ? `: ${report.reason}` : "."}{" "}
+          {failureHint(report.reason)}
         </div>
       )}
 

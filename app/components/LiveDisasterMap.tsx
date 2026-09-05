@@ -26,6 +26,7 @@ const CATEGORY_COLOR: Record<Doc<"disasterEvents">["category"], string> = {
   severeWeather: "#eab308",
   landslide: "#78350f", // NEW — brown, distinct from all existing colors
   iceberg: "#38bdf8", // NEW — ice-blue
+  tsunami: "#0891b2",
 };
 
 const CATEGORY_LABEL: Record<Doc<"disasterEvents">["category"], string> = {
@@ -37,6 +38,7 @@ const CATEGORY_LABEL: Record<Doc<"disasterEvents">["category"], string> = {
   severeWeather: "Severe Weather",
   landslide: "Landslide/Avalanche",
   iceberg: "Iceberg Calving",
+  tsunami: "Tsunami", // NEW
 };
 
 function MapLegend(): React.JSX.Element {

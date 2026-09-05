@@ -1,7 +1,7 @@
 // lib/api/usgs.ts
 export interface NormalizedEvent {
   externalId: string;
-  source: "usgs" | "eonet" | "noaa" | "gvp";
+  source: "usgs" | "eonet" | "noaa" | "gvp" | "news";
   category:
     | "earthquake"
     | "wildfire"
@@ -10,11 +10,11 @@ export interface NormalizedEvent {
     | "volcano"
     | "severeWeather"
     | "landslide"
-    | "iceberg";
-
+    | "iceberg"
+    | "tsunami"; // NEW
   title: string;
   description?: string;
-  locationName?: string; // add
+  locationName?: string;
   latitude: number;
   longitude: number;
   severity: number;
