@@ -53,6 +53,7 @@ const CATEGORY_BASE_SEVERITY: Record<NormalizedEvent["category"], number> = {
   // Calving itself is rarely an immediate life-safety event (shipping/
   // coastal-erosion relevance mostly) — kept lower than landslide.
   iceberg: 40,
+  tsunami: 95,
 };
 
 // One request per EONET category id, each with its own limit, so a busy

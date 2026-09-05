@@ -263,6 +263,7 @@ const CATEGORY_LABEL: Record<Category, string> = {
   severeWeather: "⛈️ Severe Weather",
   landslide: "⛰️ Landslide/Avalanche", // NEW
   iceberg: "🧊 Iceberg Calving",
+  tsunami: "🌊 Tsunami", // NEW
 };
 
 // Tab definitions — "all" excludes volcanoes (they're map-only unless new).
@@ -270,6 +271,7 @@ const CATEGORY_LABEL: Record<Category, string> = {
 const TABS: { value: Category | "all"; label: string }[] = [
   { value: "all", label: "🌍 All" },
   { value: "earthquake", label: "🌐 Earthquakes" },
+  { value: "tsunami", label: "🌊 Tsunamis" },
   { value: "wildfire", label: "🔥 Wildfires" },
   { value: "flood", label: "🌊 Floods" },
   { value: "storm", label: "🌀 Storms" },
@@ -374,7 +376,7 @@ function GlobalPriorityCard() {
   return (
     <div className="rounded-lg border p-4 bg-white dark:bg-gray-900 dark:border-green-900/30">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold text-white dark:text-white">
+        <h3 className="font-semibold text-black dark:text-white">
           Top Global Priority
         </h3>
         <Badge
@@ -387,23 +389,49 @@ function GlobalPriorityCard() {
         {briefing.aiSummary}
       </p>
       <div className="space-y-2">
-        {briefing.topEvents.map((event) => (
-          <Link
-            key={event.eventId}
-            href={`/dashboard/map?lat=${event.latitude}&lng=${event.longitude}&zoom=7&id=${event.eventId}`}
-            className="block rounded-md px-2 py-1.5 -mx-2 hover:bg-green-50 dark:hover:bg-green-950/20 transition-colors"
-          >
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-medium text-white dark:text-white">
-                {event.title}
-              </span>
-              <span className="text-gray-500">
-                {event.rawSeverityLabel} · {event.hoursAgo}h ago
-              </span>
+        {briefing.topEvents.map((event) => {
+          const href =
+            event.source === "structured" &&
+            event.latitude != null &&
+            event.longitude != null
+              ? `/dashboard/map?lat=${event.latitude}&lng=${event.longitude}&zoom=7&id=${event.sourceId}`
+              : event.link;
+
+          const row = (
+            <>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium text-black dark:text-white">
+                  {event.title}
+                </span>
+                <span className="text-gray-500">
+                  {event.rawSeverityLabel} · {event.hoursAgo}h ago
+                  {event.source === "news" && " · via news"}
+                </span>
+              </div>
+              <EventLocation locationName={event.locationName} />
+            </>
+          );
+
+          const className =
+            "block rounded-md px-2 py-1.5 -mx-2 hover:bg-green-50 dark:hover:bg-green-950/20 transition-colors";
+
+          return href ? (
+            <Link
+              key={event.sourceId}
+              href={href}
+              {...(event.source === "news"
+                ? { target: "_blank", rel: "noopener noreferrer" }
+                : {})}
+              className={className}
+            >
+              {row}
+            </Link>
+          ) : (
+            <div key={event.sourceId} className={className}>
+              {row}
             </div>
-            <EventLocation locationName={event.locationName} />
-          </Link>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

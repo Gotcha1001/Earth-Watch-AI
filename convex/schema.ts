@@ -18,6 +18,7 @@ export default defineSchema({
       v.literal("eonet"),
       v.literal("noaa"),
       v.literal("gvp"),
+      v.literal("news"),
     ),
     category: v.union(
       v.literal("earthquake"),
@@ -28,6 +29,7 @@ export default defineSchema({
       v.literal("severeWeather"),
       v.literal("landslide"), // NEW
       v.literal("iceberg"), // NEW
+      v.literal("tsunami"), // NEW
     ),
     title: v.string(),
     description: v.optional(v.string()),
@@ -96,16 +98,17 @@ export default defineSchema({
     generatedAt: v.number(),
     topEvents: v.array(
       v.object({
-        eventId: v.id("disasterEvents"),
+        sourceId: v.string(), // disasterEvents._id (structured) or briefingNotifications._id (news), as a string
+        source: v.union(v.literal("structured"), v.literal("news")),
         category: v.string(),
         title: v.string(),
         rawSeverityLabel: v.string(),
         severity: v.number(),
         hoursAgo: v.number(),
-        latitude: v.number(),
-        longitude: v.number(),
-        // NEW: snapshot of the event's location name at briefing time.
+        latitude: v.optional(v.number()), // absent for news-derived entries
+        longitude: v.optional(v.number()), // absent for news-derived entries
         locationName: v.optional(v.string()),
+        link: v.optional(v.string()), // news-derived entries carry their source URL instead of a map pin
       }),
     ),
     mostDangerousTitle: v.string(),
@@ -136,6 +139,10 @@ export default defineSchema({
     location: v.optional(v.string()),
     category: v.optional(v.string()),
     link: v.optional(v.string()),
+    // The disaster's own date (per newsActions.ts's analyst prompt), not
+    // when we detected it — lets globalPriorityEngine.ts score on actual
+    // recency instead of treating every news-derived finding as "0h ago".
+    publishedDate: v.optional(v.string()),
     read: v.boolean(),
     createdAt: v.number(),
   })

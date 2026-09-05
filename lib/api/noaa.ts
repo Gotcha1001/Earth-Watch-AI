@@ -1,11 +1,13 @@
 // lib/api/noaa.ts
+
 import type { NormalizedEvent } from "./usgs";
 
 interface NoaaAlertProperties {
   id: string;
+  event: string; // NEW — e.g. "Tornado Warning", "Tsunami Warning". This is what was missing.
   headline: string | null;
   description: string | null;
-  areaDesc?: string | null; // add
+  areaDesc?: string | null;
   severity: "Extreme" | "Severe" | "Moderate" | "Minor" | "Unknown";
   effective: string;
   geocode: { SAME?: string[] };
@@ -13,7 +15,7 @@ interface NoaaAlertProperties {
 
 interface NoaaGeometry {
   type: string;
-  coordinates: number[][][] | number[]; // polygon or point, varies by alert
+  coordinates: number[][][] | number[];
 }
 
 interface NoaaFeature {
@@ -36,6 +38,19 @@ const SEVERITY_SCORE: Record<NoaaAlertProperties["severity"], number> = {
   Unknown: 10,
 };
 
+// NWS relays PTWC/NTWC tsunami messages through the same CAP alerts feed as
+// tornado/flood warnings — there's no separate tsunami source to add, just
+// this event-name check that was missing before.
+const TSUNAMI_EVENTS = new Set([
+  "Tsunami Warning",
+  "Tsunami Advisory",
+  "Tsunami Watch",
+]);
+
+function categoryForEvent(event: string): NormalizedEvent["category"] {
+  return TSUNAMI_EVENTS.has(event) ? "tsunami" : "severeWeather";
+}
+
 /** NWS polygons vary a lot in shape; we use the polygon centroid as a stand-in point. */
 function centroidOf(
   geometry: NoaaGeometry | null,
@@ -43,7 +58,6 @@ function centroidOf(
   if (!geometry || geometry.type !== "Polygon") return null;
   const ring = (geometry.coordinates as number[][][])[0];
   if (!ring || ring.length === 0) return null;
-
   let sumLat = 0;
   let sumLon = 0;
   for (const [lon, lat] of ring) {
@@ -57,12 +71,14 @@ export async function fetchNoaaAlerts(): Promise<NormalizedEvent[]> {
   const response = await fetch(NOAA_ALERTS_URL, {
     headers: { "User-Agent": "EarthWatchAI (contact: ops@earthwatch.ai)" },
   });
+
   if (!response.ok) {
     throw new Error(`NOAA alerts request failed: ${response.status}`);
   }
-  const data = (await response.json()) as NoaaResponse;
 
+  const data = (await response.json()) as NoaaResponse;
   const results: NormalizedEvent[] = [];
+
   for (const feature of data.features) {
     const point = centroidOf(feature.geometry);
     if (!point) continue; // skip alerts NWS didn't attach a polygon to
@@ -70,7 +86,7 @@ export async function fetchNoaaAlerts(): Promise<NormalizedEvent[]> {
     results.push({
       externalId: `noaa-${feature.properties.id}`,
       source: "noaa",
-      category: "severeWeather",
+      category: categoryForEvent(feature.properties.event), // CHANGED — was hardcoded "severeWeather"
       title: feature.properties.headline ?? "NWS Alert",
       description: feature.properties.description ?? undefined,
       latitude: point.lat,
@@ -81,5 +97,6 @@ export async function fetchNoaaAlerts(): Promise<NormalizedEvent[]> {
       locationName: feature.properties.areaDesc ?? undefined,
     });
   }
+
   return results;
 }

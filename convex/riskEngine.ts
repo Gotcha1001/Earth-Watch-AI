@@ -5,6 +5,7 @@ import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { distanceKm } from "../lib/geo";
 import { scoreRegion, levelForScore, type RiskLevel } from "../lib/riskScoring";
+import { callOpenRouterWithRetry } from "../lib/openrouter"; // NEW
 
 const FALLBACK_SUMMARY =
   "Automated analysis is temporarily unavailable. Nearby monitored events are listed below — use your own judgment and local authority guidance.";
@@ -29,31 +30,21 @@ function buildPrompt(regionName: string, events: RegionEventInput[]): string {
   return `${RISK_ANALYST_PROMPT}\n\nRegion: ${regionName}\nEvents (JSON): ${JSON.stringify(events)}`;
 }
 
+// CHANGED — was a raw fetch() with no retry, so any transient overload from
+// NVIDIA's free NIM worker pool (the same shared-capacity issue newsActions.ts
+// hit) fell straight through to the catch block below and silently degraded
+// every affected region to FALLBACK_SUMMARY for that whole 20-min cycle.
+// Lighter retry budget than newsActions.ts's default, since this runs once
+// per region in a loop rather than once per report — see note above.
 async function callOpenRouter(prompt: string, apiKey: string): Promise<string> {
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-      messages: [{ role: "user", content: prompt }],
-      stream: false,
-    }),
+  return callOpenRouterWithRetry({
+    apiKey,
+    model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    fallbackModel: "openai/gpt-4o-mini", // swap for whatever you settle on
+    messages: [{ role: "user", content: prompt }],
+    maxRetries: 1,
+    retryDelayMs: 800,
   });
-
-  if (!response.ok) {
-    throw new Error(`OpenRouter request failed: ${response.status}`);
-  }
-
-  interface OpenRouterResponse {
-    choices?: { message?: { content?: string } }[];
-  }
-  const data = (await response.json()) as OpenRouterResponse;
-  const text = data.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new Error("OpenRouter returned no content");
-  return text;
 }
 
 /** Re-scores every watched region against currently-active events and, for
@@ -62,7 +53,10 @@ export const analyzeAllRegions = internalAction({
   args: {},
   handler: async (ctx) => {
     const regions = await ctx.runQuery(internal.regions.listAllRegions, {});
-    const activeEvents = await ctx.runQuery(internal.events.listActiveEventsInternal, {});
+    const activeEvents = await ctx.runQuery(
+      internal.events.listActiveEventsInternal,
+      {},
+    );
     const apiKey = process.env.OPENROUTER_API_KEY;
 
     for (const region of regions) {
@@ -88,32 +82,46 @@ export const analyzeAllRegions = internalAction({
       const level: RiskLevel = levelForScore(score);
       if (level === "low") continue; // don't spam assessments for negligible risk
 
-      const eventInputs: RegionEventInput[] = nearby.map(({ event, distance }) => ({
-        category: event.category,
-        rawSeverityLabel: event.rawSeverityLabel,
-        severity: event.severity,
-        distanceKm: Math.round(distance),
-        hoursAgo: Math.round((now - event.occurredAt) / (1000 * 60 * 60)),
-      }));
+      const eventInputs: RegionEventInput[] = nearby.map(
+        ({ event, distance }) => ({
+          category: event.category,
+          rawSeverityLabel: event.rawSeverityLabel,
+          severity: event.severity,
+          distanceKm: Math.round(distance),
+          hoursAgo: Math.round((now - event.occurredAt) / (1000 * 60 * 60)),
+        }),
+      );
 
       let summary = FALLBACK_SUMMARY;
       if (apiKey) {
         try {
-          summary = await callOpenRouter(buildPrompt(region.name, eventInputs), apiKey);
+          summary = await callOpenRouter(
+            buildPrompt(region.name, eventInputs),
+            apiKey,
+          );
         } catch (error) {
-          console.error("[riskEngine] OpenRouter call failed:", region._id, error);
+          console.error(
+            "[riskEngine] OpenRouter call failed:",
+            region._id,
+            error,
+          );
         }
       } else {
-        console.error("[riskEngine] OPENROUTER_API_KEY missing; using fallback summary.");
+        console.error(
+          "[riskEngine] OPENROUTER_API_KEY missing; using fallback summary.",
+        );
       }
 
-      const assessmentId = await ctx.runMutation(internal.riskAssessments.recordAssessment, {
-        regionId: region._id,
-        riskScore: score,
-        riskLevel: level,
-        contributingEventIds: nearby.map(({ event }) => event._id),
-        aiSummary: summary,
-      });
+      const assessmentId = await ctx.runMutation(
+        internal.riskAssessments.recordAssessment,
+        {
+          regionId: region._id,
+          riskScore: score,
+          riskLevel: level,
+          contributingEventIds: nearby.map(({ event }) => event._id),
+          aiSummary: summary,
+        },
+      );
 
       if (level === "moderate" || level === "high" || level === "extreme") {
         await ctx.runMutation(internal.alerts.createAlertForRegion, {
