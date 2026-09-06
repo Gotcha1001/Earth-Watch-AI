@@ -1,6 +1,6 @@
 // convex/riskAssessments.ts  — default runtime
 import { v } from "convex/values";
-import { internalMutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 
 export const recordAssessment = internalMutation({
   args: {
@@ -24,6 +24,17 @@ export const recordAssessment = internalMutation({
 });
 
 export const getLatestForRegion = query({
+  args: { regionId: v.id("watchedRegions") },
+  handler: async (ctx, { regionId }) => {
+    return ctx.db
+      .query("riskAssessments")
+      .withIndex("by_regionId", (q) => q.eq("regionId", regionId))
+      .order("desc")
+      .first();
+  },
+});
+
+export const getLatestForRegionInternal = internalQuery({
   args: { regionId: v.id("watchedRegions") },
   handler: async (ctx, { regionId }) => {
     return ctx.db
