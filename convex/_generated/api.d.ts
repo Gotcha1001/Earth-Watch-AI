@@ -10,6 +10,7 @@
 
 import type * as adminActions from "../adminActions.js";
 import type * as alerts from "../alerts.js";
+import type * as cleanup from "../cleanup.js";
 import type * as crons from "../crons.js";
 import type * as events from "../events.js";
 import type * as eventsIngest from "../eventsIngest.js";
@@ -22,6 +23,7 @@ import type * as regions from "../regions.js";
 import type * as riskAssessments from "../riskAssessments.js";
 import type * as riskEngine from "../riskEngine.js";
 import type * as user from "../user.js";
+import type * as volcanoIngest from "../volcanoIngest.js";
 
 import type {
   ApiFromModules,
@@ -32,6 +34,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   adminActions: typeof adminActions;
   alerts: typeof alerts;
+  cleanup: typeof cleanup;
   crons: typeof crons;
   events: typeof events;
   eventsIngest: typeof eventsIngest;
@@ -44,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   riskAssessments: typeof riskAssessments;
   riskEngine: typeof riskEngine;
   user: typeof user;
+  volcanoIngest: typeof volcanoIngest;
 }>;
 
 /**

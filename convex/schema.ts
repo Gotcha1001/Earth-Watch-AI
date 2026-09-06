@@ -1,3 +1,4 @@
+// convex/schema.ts
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -27,9 +28,9 @@ export default defineSchema({
       v.literal("storm"),
       v.literal("volcano"),
       v.literal("severeWeather"),
-      v.literal("landslide"), // NEW
-      v.literal("iceberg"), // NEW
-      v.literal("tsunami"), // NEW
+      v.literal("landslide"),
+      v.literal("iceberg"),
+      v.literal("tsunami"),
     ),
     title: v.string(),
     description: v.optional(v.string()),
@@ -42,16 +43,22 @@ export default defineSchema({
     status: v.union(v.literal("active"), v.literal("resolved")),
     sourceUrl: v.optional(v.string()),
     dedupeKey: v.optional(v.string()),
-    // Reverse-geocoded human-readable place name, filled in asynchronously
-    // by convex/geocodeBackfill.ts after ingest — absent until then.
     locationName: v.optional(v.string()),
     firstSeenAt: v.optional(v.number()),
+    // NEW — explicit indexed flag instead of relying on
+    // `locationName === undefined` via an unindexed filter scan. Set true
+    // at insert when no name was available yet, flipped to false the
+    // moment geocodeBackfill.ts resolves one. Lets backfillLocationNames
+    // query the index directly and get back an empty result almost for
+    // free on a quiet tick, instead of scanning every row in the table.
+    needsGeocode: v.optional(v.boolean()),
   })
     .index("by_externalId", ["externalId"])
     .index("by_status_category", ["status", "category"])
     .index("by_occurredAt", ["occurredAt"])
     .index("by_dedupeKey_status", ["dedupeKey", "status"])
-    .index("by_category_ingestedAt", ["category", "ingestedAt"]),
+    .index("by_category_ingestedAt", ["category", "ingestedAt"])
+    .index("by_needsGeocode", ["needsGeocode"]), // NEW
 
   watchedRegions: defineTable({
     userId: v.id("users"),
@@ -98,17 +105,17 @@ export default defineSchema({
     generatedAt: v.number(),
     topEvents: v.array(
       v.object({
-        sourceId: v.string(), // disasterEvents._id (structured) or briefingNotifications._id (news), as a string
+        sourceId: v.string(),
         source: v.union(v.literal("structured"), v.literal("news")),
         category: v.string(),
         title: v.string(),
         rawSeverityLabel: v.string(),
         severity: v.number(),
         hoursAgo: v.number(),
-        latitude: v.optional(v.number()), // absent for news-derived entries
-        longitude: v.optional(v.number()), // absent for news-derived entries
+        latitude: v.optional(v.number()),
+        longitude: v.optional(v.number()),
         locationName: v.optional(v.string()),
-        link: v.optional(v.string()), // news-derived entries carry their source URL instead of a map pin
+        link: v.optional(v.string()),
       }),
     ),
     mostDangerousTitle: v.string(),
@@ -117,21 +124,19 @@ export default defineSchema({
   }).index("by_generatedAt", ["generatedAt"]),
 
   disasterReports: defineTable({
-    dateKey: v.string(), // "YYYY-MM-DD", UTC — see todayDateKey() in newsActions.ts
+    dateKey: v.string(),
     status: v.union(
       v.literal("generating"),
       v.literal("complete"),
       v.literal("failed"),
     ),
     commentary: v.optional(v.string()),
-    findings: v.array(v.any()), // Finding[] shape from newsActions.ts
+    findings: v.array(v.any()),
     sources: v.array(v.object({ title: v.string(), url: v.string() })),
     generatedAt: v.number(),
-    reason: v.optional(v.string()), // failure reason, e.g. "missing_api_key"
+    reason: v.optional(v.string()),
   }).index("by_dateKey", ["dateKey"]),
 
-  // Severe findings spun off into their own notification stream —
-  // deliberately separate from the alerts table My Regions uses.
   briefingNotifications: defineTable({
     dateKey: v.string(),
     title: v.string(),
@@ -139,13 +144,10 @@ export default defineSchema({
     location: v.optional(v.string()),
     category: v.optional(v.string()),
     link: v.optional(v.string()),
-    // The disaster's own date (per newsActions.ts's analyst prompt), not
-    // when we detected it — lets globalPriorityEngine.ts score on actual
-    // recency instead of treating every news-derived finding as "0h ago".
     publishedDate: v.optional(v.string()),
     read: v.boolean(),
     createdAt: v.number(),
   })
     .index("by_read", ["read"])
     .index("by_dateKey", ["dateKey"]),
-}); // <-- everything above must be inside this closing paren
+});

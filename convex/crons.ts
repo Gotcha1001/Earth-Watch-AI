@@ -35,6 +35,7 @@
 // export default crons;
 
 // convex/crons.ts
+// convex/crons.ts
 import { cronJobs } from "convex/server";
 import { internal } from "./_generated/api";
 
@@ -44,6 +45,17 @@ crons.interval(
   "ingest disaster feeds",
   { minutes: 5 },
   internal.eventsIngest.ingestAll,
+  {},
+);
+
+// NEW — volcanoes split off from the 5-min cycle. Once/day is generous
+// slack against how rarely GVP's "continuing eruption" list actually
+// changes; drop to { hours: 6 } or { hours: 12 } if you want new
+// eruptions to surface faster than a full day's delay.
+crons.interval(
+  "ingest volcano eruptions",
+  { hours: 24 },
+  internal.volcanoIngest.ingestVolcanoes,
   {},
 );
 
@@ -63,21 +75,23 @@ crons.interval(
 
 crons.interval(
   "backfill event location names",
-  { minutes: 1 },
+  { minutes: 5 },
   internal.geocodeBackfill.backfillLocationNames,
   {},
 );
 
-// NEW -- makes the Daily Briefing (Tavily -> OpenRouter commentary +
-// findings) proactive instead of living entirely behind the "Generate"
-// button. force: false, so this is a no-op if today's report is still
-// fresh (see REGEN_COOLDOWN_MS in newsActions.ts) -- keeps the Tavily/
-// OpenRouter spend bounded even though this fires 6x/day.
 crons.interval(
   "daily disaster briefing",
   { hours: 4 },
   internal.newsActions.generateDailyReportInternal,
   { force: false },
+);
+
+crons.interval(
+  "prune old data",
+  { hours: 6 },
+  internal.cleanup.pruneOldData,
+  {},
 );
 
 export default crons;
